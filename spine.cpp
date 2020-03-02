@@ -38,6 +38,7 @@
 #include <spine/spine.h>
 #include <core/method_bind_ext.gen.inc>
 
+Array *Spine::invalid_names = NULL;
 Spine::SpineResource::SpineResource() {
 
 	atlas = NULL;
@@ -51,9 +52,12 @@ Spine::SpineResource::~SpineResource() {
 
 	if (data != NULL)
 		spSkeletonData_dispose(data);
+
+	if (invalid_names != NULL) {
+		memdelete(invalid_names);
+	}
 }
 
-Array *Spine::invalid_names = NULL;
 Array Spine::get_invalid_names() {
 	if (invalid_names == NULL) {
 		invalid_names = memnew(Array());
@@ -1472,6 +1476,7 @@ Spine::~Spine() {
 
 	// cleanup
 	_spine_dispose();
+	memdelete(fx_node);
 }
 
 #endif // MODULE_SPINE_ENABLED
