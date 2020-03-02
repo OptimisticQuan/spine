@@ -152,8 +152,11 @@ public:
 	void set_default_mix(real_t p_duration);
 	void mix(const String& p_from, const String& p_to, real_t p_duration);
 
-	bool play(const String& p_name, bool p_loop = false, int p_track = 0, int p_delay = 0);
-	bool add(const String& p_name, bool p_loop = false, int p_track = 0, int p_delay = 0);
+	bool play(const String& p_name, bool p_loop = false, int p_track = 0, real_t p_delay = 0);
+	bool play_empty(int p_track = 0, real_t p_mixDuration = 0);
+	bool play_all_empty(real_t p_mixDuration = 0);
+	bool add(const String& p_name, bool p_loop = false, int p_track = 0, real_t p_delay = 0);
+	bool add_empty(int p_track = 0, real_t p_mixDuration = 0, real_t p_delay = 0);
 	void clear(int p_track = -1);
 	void stop();
 	bool is_playing(int p_track = 0) const;
@@ -241,9 +244,10 @@ public:
 
 	//void advance(float p_time);
 
+#ifdef TOOLS_ENABLED
 	virtual Rect2 _edit_get_rect() const;
 	virtual bool _edit_use_rect() const;
-
+#endif // TOOLS_ENABLED
 	Spine();
 	virtual ~Spine();
 };

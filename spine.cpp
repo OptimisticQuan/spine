@@ -672,7 +672,7 @@ void Spine::mix(const String &p_from, const String &p_to, real_t p_duration) {
 	spAnimationStateData_setMixByName(state->data, p_from.utf8().get_data(), p_to.utf8().get_data(), p_duration);
 }
 
-bool Spine::play(const String &p_name, bool p_loop, int p_track, int p_delay) {
+bool Spine::play(const String &p_name, bool p_loop, int p_track, real_t p_delay) {
 
 	ERR_FAIL_COND_V(skeleton == NULL, false);
 	spAnimation *animation = spSkeletonData_findAnimation(skeleton->data, p_name.utf8().get_data());
@@ -693,12 +693,59 @@ bool Spine::play(const String &p_name, bool p_loop, int p_track, int p_delay) {
 	return true;
 }
 
-bool Spine::add(const String &p_name, bool p_loop, int p_track, int p_delay) {
+bool Spine::play_empty(int p_track, real_t p_mixDuration) {
+
+	ERR_FAIL_COND_V(skeleton == NULL, false);
+	spAnimationState_setEmptyAnimation(state, p_track, p_mixDuration);
+	current_animation = "[empty]";
+	if (skip_frames) {
+		frames_to_skip = 0;
+	}
+
+	_set_process(true);
+	playing = true;
+	// update frame
+	if (!is_active())
+		_animation_process(0);
+
+	return true;
+}
+
+bool Spine::play_all_empty(real_t p_mixDuration) {
+
+	ERR_FAIL_COND_V(skeleton == NULL, false);
+	spAnimationState_setEmptyAnimations(state, p_mixDuration);
+	current_animation = "[empty]";
+	if (skip_frames) {
+		frames_to_skip = 0;
+	}
+
+	_set_process(true);
+	playing = true;
+	// update frame
+	if (!is_active())
+		_animation_process(0);
+
+	return true;
+}
+
+bool Spine::add(const String &p_name, bool p_loop, int p_track, real_t p_delay) {
 
 	ERR_FAIL_COND_V(skeleton == NULL, false);
 	spAnimation *animation = spSkeletonData_findAnimation(skeleton->data, p_name.utf8().get_data());
 	ERR_FAIL_COND_V(animation == NULL, false);
 	spTrackEntry *entry = spAnimationState_addAnimation(state, p_track, animation, p_loop, p_delay);
+
+	_set_process(true);
+	playing = true;
+
+	return true;
+}
+
+bool Spine::add_empty(int p_track, real_t p_mixDuration, real_t p_delay) {
+
+	ERR_FAIL_COND_V(skeleton == NULL, false);
+	spAnimationState_addEmptyAnimation(state, p_track, p_mixDuration, p_delay);
 
 	_set_process(true);
 	playing = true;
@@ -1219,8 +1266,11 @@ void Spine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_default_mix", "duration"), &Spine::set_default_mix);
 	ClassDB::bind_method(D_METHOD("mix", "from", "to", "duration"), &Spine::mix, 0);
 	ClassDB::bind_method(D_METHOD("play", "name", "loop", "track", "delay"), &Spine::play, 1.0f, false, 0, 0);
+	ClassDB::bind_method(D_METHOD("play_empty", "track", "mixDuration"), &Spine::play_empty, 0, 0);
+	ClassDB::bind_method(D_METHOD("play_all_empty", "mixDuration"), &Spine::play_all_empty, 0);
 	ClassDB::bind_method(D_METHOD("add", "name", "loop", "track", "delay"), &Spine::add, 1.0f, false, 0, 0);
-	ClassDB::bind_method(D_METHOD("clear", "track"), &Spine::clear);
+	ClassDB::bind_method(D_METHOD("add_empty", "track", "mixDuration", "delay"), &Spine::add_empty, 0, 0, 0);
+	ClassDB::bind_method(D_METHOD("clear", "track"), &Spine::clear, -1);
 	ClassDB::bind_method(D_METHOD("stop"), &Spine::stop);
 	ClassDB::bind_method(D_METHOD("is_playing", "track"), &Spine::is_playing, DEFVAL(0));
 
@@ -1307,6 +1357,7 @@ void Spine::_bind_methods() {
 	BIND_ENUM_CONSTANT(DEBUG_ATTACHMENT_BOUNDING_BOX);
 }
 
+#ifdef TOOLS_ENABLED
 Rect2 Spine::_edit_get_rect() const {
 
 	if (skeleton == NULL)
@@ -1348,6 +1399,7 @@ Rect2 Spine::_edit_get_rect() const {
 bool Spine::_edit_use_rect() const {
 	return skeleton != NULL;
 }
+#endif // TOOLS_ENABLED
 
 void Spine::_update_verties_count() {
 
