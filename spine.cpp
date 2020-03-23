@@ -53,14 +53,15 @@ Spine::SpineResource::~SpineResource() {
 	if (data != NULL)
 		spSkeletonData_dispose(data);
 
-	if (invalid_names != NULL) {
-		memdelete(invalid_names);
-	}
+	// if (invalid_names != NULL) {
+	// 	memdelete(invalid_names);
+	// 	invalid_names = NULL;
+	// }
 }
 
 Array Spine::get_invalid_names() {
 	if (invalid_names == NULL) {
-		invalid_names = memnew(Array());
+		invalid_names = new Array();
 	}
 	return *invalid_names;
 }
@@ -1476,7 +1477,7 @@ Spine::~Spine() {
 
 	// cleanup
 	_spine_dispose();
-	memdelete(fx_node);
+	// memdelete(fx_node);
 }
 
 #endif // MODULE_SPINE_ENABLED
