@@ -27,8 +27,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
-#ifdef MODULE_SPINE_ENABLED
-
 #include <core/class_db.h>
 #include <core/project_settings.h>
 #include "register_types.h"
@@ -259,10 +257,3 @@ void unregister_spine_types() {
 	resource_loader_spine.unref();
 
 }
-
-#else
-
-void register_spine_types() {}
-void unregister_spine_types() {}
-
-#endif // MODULE_SPINE_ENABLED

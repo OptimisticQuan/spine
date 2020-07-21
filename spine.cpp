@@ -27,7 +27,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
-#ifdef MODULE_SPINE_ENABLED
 #include "spine.h"
 #include "core/io/resource_loader.h"
 #include "scene/2d/collision_object_2d.h"
@@ -155,7 +154,7 @@ void Spine::_animation_draw() {
 
 	spColor_setFromFloats(&skeleton->color, modulate.r, modulate.g, modulate.b, modulate.a);
 
-	int additive = 0;
+	// int additive = 0;
 	int fx_additive = 0;
 	Color color;
 	const float *uvs = NULL;
@@ -195,7 +194,9 @@ void Spine::_animation_draw() {
 				a = attachment->color.a;
 				break;
 			}
-			case SP_ATTACHMENT_MESH: {
+			case SP_ATTACHMENT_MESH:
+			case SP_ATTACHMENT_LINKED_MESH:
+			{
 
 				spMeshAttachment *attachment = (spMeshAttachment *)slot->attachment;
 				is_fx = strstr(attachment->path, fx_prefix) != NULL;
@@ -273,7 +274,9 @@ void Spine::_animation_draw() {
 					triangles_count = 0;
 					break;
 				}
-				case SP_ATTACHMENT_MESH: {
+				case SP_ATTACHMENT_MESH: 
+				case SP_ATTACHMENT_LINKED_MESH:
+				{
 
 					if (!debug_attachment_mesh)
 						continue;
@@ -449,10 +452,9 @@ bool Spine::_set(const StringName &p_name, const Variant &p_value) {
 
 		forward = p_value;
 	} else if (name == "playback/skin") {
-
-		skin = p_value;
-		if (skeleton != NULL)
-			set_skin(skin);
+		set_skin(p_value);
+	} else if (name == "playback/combined_skin") {
+		set_combined_skin_names(p_value);
 	} else if (name == "debug/region")
 		set_debug_attachment(DEBUG_ATTACHMENT_REGION, p_value);
 	else if (name == "debug/mesh")
@@ -478,6 +480,10 @@ bool Spine::_get(const StringName &p_name, Variant &r_ret) const {
 		r_ret = forward;
 	else if (name == "playback/skin")
 		r_ret = skin;
+	else if (name == "playback/combined_skin") {
+		Array ary = get_combined_skin_names();
+		r_ret = ary;
+	}
 	else if (name == "debug/region")
 		r_ret = is_debug_attachment(DEBUG_ATTACHMENT_REGION);
 	else if (name == "debug/mesh")
@@ -544,9 +550,14 @@ void Spine::_get_property_list(List<PropertyInfo> *p_list) const {
 				hint += ",";
 			hint += E->get();
 		}
-
-		p_list->push_back(PropertyInfo(Variant::STRING, "playback/skin", PROPERTY_HINT_ENUM, hint));
+		// if (!use_combined_skin) {
+			p_list->push_back(PropertyInfo(Variant::STRING, "playback/skin", PROPERTY_HINT_ENUM, hint));
+		// } else {
+			p_list->push_back(PropertyInfo(Variant::ARRAY, "playback/combined_skin", PROPERTY_HINT_NONE,
+					String::num_int64(Variant::STRING) + "/" + String::num_int64(PROPERTY_HINT_ENUM) + ":" + hint));
+		// }
 	}
+	
 	p_list->push_back(PropertyInfo(Variant::BOOL, "debug/region", PROPERTY_HINT_NONE));
 	p_list->push_back(PropertyInfo(Variant::BOOL, "debug/mesh", PROPERTY_HINT_NONE));
 	p_list->push_back(PropertyInfo(Variant::BOOL, "debug/skinned_mesh", PROPERTY_HINT_NONE));
@@ -902,10 +913,56 @@ bool Spine::is_flip_y() const {
 	return flip_y;
 }
 
-bool Spine::set_skin(const String &p_name) {
+void Spine::set_use_combined_skin(bool val) {
+	use_combined_skin = val;
+	update_skin_view();
+}
 
-	ERR_FAIL_COND_V(skeleton == NULL, false);
-	return spSkeleton_setSkinByName(skeleton, p_name.utf8().get_data()) ? true : false;
+Array Spine::get_combined_skin_names() const {
+	Array array;
+	array.resize(combined_skin_names.size());
+	for (size_t i = 0; i < combined_skin_names.size(); i++) {
+		array[i] = combined_skin_names[i];
+	}
+	return array;
+}
+
+void Spine::set_combined_skin_names(Array names) {
+	combined_skin_names.clear();
+	for (size_t i = 0; i < names.size(); i++) {
+		combined_skin_names.push_back(names[i]);
+	}
+	if (use_combined_skin) {
+		update_skin_view();
+	}
+}
+
+void Spine::add_combined_skin(const String& p_name) {
+	if (combined_skin_names.find(p_name) >= 0) {
+		return;
+	}
+	combined_skin_names.push_back(p_name);
+}
+
+void Spine::remove_combined_skin(const String& p_name) {
+	int inx = combined_skin_names.find(p_name);
+	if (inx < 0) {
+		return;
+	}
+	combined_skin_names.remove(inx);
+}
+
+
+bool Spine::set_skin(const String &p_name) {
+	skin = p_name;
+	if (skeleton == nullptr) {
+		return false;
+	}
+	if (!spSkeletonData_findSkin(skeleton->data, skin.utf8().get_data())) {
+		return false;
+	}
+	update_skin_view();
+	return true;
 }
 
 void Spine::set_duration(float p_duration) {
@@ -928,8 +985,8 @@ Dictionary Spine::get_skeleton() const {
 	dict["slotCount"] = skeleton->slotsCount;
 	dict["ikConstraintsCount"] = skeleton->ikConstraintsCount;
 	dict["time"] = skeleton->time;
-	dict["flipX"] = skeleton->flipX;
-	dict["flipY"] = skeleton->flipY;
+	dict["flipX"] = flip_x;
+	dict["flipY"] = flip_y;
 	dict["x"] = skeleton->x;
 	dict["y"] = skeleton->y;
 
@@ -1296,6 +1353,14 @@ void Spine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_flip_y", "fliped"), &Spine::set_flip_y);
 	ClassDB::bind_method(D_METHOD("is_flip_y"), &Spine::is_flip_y);
 	ClassDB::bind_method(D_METHOD("set_skin", "skin"), &Spine::set_skin);
+	ClassDB::bind_method(D_METHOD("set_use_combined_skin", "use"), &Spine::set_use_combined_skin);
+	ClassDB::bind_method(D_METHOD("is_use_combined_skin"), &Spine::is_use_combined_skin);
+	ClassDB::bind_method(D_METHOD("add_combined_skin", "skin"), &Spine::add_combined_skin);
+	ClassDB::bind_method(D_METHOD("remove_combined_skin", "skin"), &Spine::remove_combined_skin);
+	ClassDB::bind_method(D_METHOD("clear_combined_skin"), &Spine::clear_combined_skin);
+	ClassDB::bind_method(D_METHOD("update_skin_view"), &Spine::update_skin_view);
+	ClassDB::bind_method(D_METHOD("get_combined_skin_names"), &Spine::get_combined_skin_names);
+	ClassDB::bind_method(D_METHOD("set_combined_skin_names", "names"), &Spine::set_combined_skin_names);
 	ClassDB::bind_method(D_METHOD("set_duration", "p_duration"), &Spine::set_duration);
 	ClassDB::bind_method(D_METHOD("get_duration"), &Spine::get_duration);
 	ClassDB::bind_method(D_METHOD("set_animation_process_mode", "mode"), &Spine::set_animation_process_mode);
@@ -1346,6 +1411,7 @@ void Spine::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "fx_prefix"), "set_fx_slot_prefix", "get_fx_slot_prefix");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "resource", PROPERTY_HINT_RESOURCE_TYPE, "SpineResource"), "set_resource", "get_resource"); //, PROPERTY_USAGE_NOEDITOR));
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "playback/duration", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_duration", "get_duration");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playback/use_combined_skin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_use_combined_skin", "is_use_combined_skin");
 
 
 	ADD_SIGNAL(MethodInfo("animation_start", PropertyInfo(Variant::INT, "track")));
@@ -1421,9 +1487,11 @@ void Spine::_update_verties_count() {
 
 			case SP_ATTACHMENT_MESH:
 			case SP_ATTACHMENT_LINKED_MESH:
-			case SP_ATTACHMENT_BOUNDING_BOX:
-				verties_count = MAX(verties_count, ((spVertexAttachment *)slot->attachment)->verticesCount + 1);
-				break;
+			case SP_ATTACHMENT_BOUNDING_BOX: {
+				spVertexAttachment* vertexAttachment = SUB_CAST(spVertexAttachment, slot->attachment);
+				verties_count = MAX(verties_count, vertexAttachment->verticesCount + 1);
+
+			} break;
 			default:
 				continue;
 		}
@@ -1432,6 +1500,44 @@ void Spine::_update_verties_count() {
 	if (verties_count > world_verts.size()) {
 		world_verts.resize(verties_count);
 		memset(world_verts.ptrw(), 0, world_verts.size() * sizeof(float));
+	}
+}
+
+
+void Spine::_process_combined_skin() {
+	if (skeleton == nullptr) {
+		return;
+	}
+	if (combined_skin == nullptr) {
+		combined_skin = spSkin_create("combined");
+	}
+	spSkin_clear(combined_skin);
+	for (size_t i=0; i<combined_skin_names.size(); i++) {
+		const String &skinName = combined_skin_names[i];
+		spSkin *skin = spSkeletonData_findSkin(skeleton->data, skinName.utf8().get_data());
+		if (!skin) {
+			continue;
+		}
+		spSkin_addSkin(combined_skin, skin);
+	}
+}
+
+void Spine::update_skin_view() {
+	if (skeleton == nullptr) {
+		return;
+	}
+	if (use_combined_skin) {
+		_process_combined_skin();
+		if (skeleton->skin == combined_skin) {
+			spSkeleton_setSkin(skeleton, nullptr);
+		}
+		spSkeleton_setSkin(skeleton, combined_skin);
+	} else {
+		spSkeleton_setSkinByName(skeleton, skin.utf8().get_data());
+	}
+	spSkeleton_setSlotsToSetupPose(skeleton);
+	if (state != nullptr) {
+		spAnimationState_apply(state, skeleton);
 	}
 }
 
@@ -1471,13 +1577,17 @@ Spine::Spine()
 	modulate = Color(1, 1, 1, 1);
 	flip_x = false;
 	flip_y = false;
+	use_combined_skin = false;
+	combined_skin = nullptr;
 }
 
 Spine::~Spine() {
 
+	if (combined_skin != nullptr) {
+		spSkin_dispose(combined_skin);
+		combined_skin = nullptr;
+	}
 	// cleanup
 	_spine_dispose();
 	// memdelete(fx_node);
 }
-
-#endif // MODULE_SPINE_ENABLED

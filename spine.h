@@ -27,7 +27,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
-#ifdef MODULE_SPINE_ENABLED
 #ifndef SPINE_H
 #define SPINE_H
 
@@ -96,6 +95,9 @@ private:
 	float actual_duration; // Store the actual length of the animation
 	bool loop;
 	String skin;
+	bool use_combined_skin;
+	Vector<String> combined_skin_names;
+	spSkin *combined_skin;
 
 	Color modulate;
 	bool flip_x, flip_y;
@@ -128,6 +130,7 @@ private:
 	void _set_process(bool p_process, bool p_force = false);
 	void _on_fx_draw();
 	void _update_verties_count();
+	void _process_combined_skin();
 
 protected:
 	static Array *invalid_names;
@@ -187,6 +190,18 @@ public:
 	void set_flip_y(bool p_flip);
 	bool is_flip_x() const;
 	bool is_flip_y() const;
+
+	bool is_use_combined_skin() const { return use_combined_skin; }
+	void set_use_combined_skin(bool val);
+
+	void update_skin_view();
+
+	Array get_combined_skin_names() const;
+	void set_combined_skin_names(Array names);
+
+	void clear_combined_skin() { combined_skin_names.clear(); }
+	void add_combined_skin(const String& p_name);
+	void remove_combined_skin(const String& p_name);
 
 	void set_duration(float p_duration);
 	float get_duration() const;
@@ -256,5 +271,3 @@ VARIANT_ENUM_CAST(Spine::AnimationProcessMode);
 VARIANT_ENUM_CAST(Spine::DebugAttachmentMode);
 
 #endif // SPINE_H
-#endif // MODULE_SPINE_ENABLED
-
