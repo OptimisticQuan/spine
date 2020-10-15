@@ -38,6 +38,29 @@
 #include <core/method_bind_ext.gen.inc>
 
 Array *Spine::invalid_names = NULL;
+
+Array Spine::SpineResource::get_skin_names() {
+	Array names;
+	if (data) {
+		for (int i = 0; i < data->skinsCount; i++) {
+			names.push_back(data->skins[i]->name);
+		}
+	}
+	return names;
+}
+
+Array Spine::SpineResource::get_animation_names() {
+	Array names;
+	if (data != NULL) {
+		for (int i = 0; i < data->animationsCount; i++) {
+			spAnimation *anim = data->animations[i];
+			names.push_back(anim->name);
+		}
+	}
+
+	return names;
+}
+
 Spine::SpineResource::SpineResource() {
 
 	atlas = NULL;
@@ -57,6 +80,12 @@ Spine::SpineResource::~SpineResource() {
 	// 	invalid_names = NULL;
 	// }
 }
+
+void Spine::SpineResource::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_skin_names"), &Spine::SpineResource::get_skin_names);
+	ClassDB::bind_method(D_METHOD("get_animation_names"), &Spine::SpineResource::get_animation_names);
+}
+
 
 Array Spine::get_invalid_names() {
 	if (invalid_names == NULL) {
@@ -109,8 +138,12 @@ void Spine::_spine_dispose() {
 	if (skeleton)
 		spSkeleton_dispose(skeleton);
 
+	if (clipper)
+		spSkeletonClipping_dispose(clipper);
+
 	state = NULL;
 	skeleton = NULL;
+	clipper = nullptr;
 	res = RES();
 
 	for (AttachmentNodes::Element *E = attachment_nodes.front(); E; E = E->next()) {
@@ -157,7 +190,8 @@ void Spine::_animation_draw() {
 	// int additive = 0;
 	int fx_additive = 0;
 	Color color;
-	const float *uvs = NULL;
+	float *uvs = NULL;
+	float *vertices = world_verts;
 	int verties_count = 0;
 	unsigned short *triangles = NULL;
 	int triangles_count = 0;
@@ -172,16 +206,22 @@ void Spine::_animation_draw() {
 	for (int i = 0, n = skeleton->slotsCount; i < n; i++) {
 
 		spSlot *slot = skeleton->drawOrder[i];
-		if (!slot->attachment) continue;
+		if (!slot->attachment || !slot->bone->active) {
+			spSkeletonClipping_clipEnd(clipper, slot);
+			continue;
+		}
 		bool is_fx = false;
-		Ref<Texture> texture;
+		Ref<Texture> texture = nullptr;
+		vertices = world_verts;
+		verties_count = 0;
+		triangles_count = 0;
 		switch (slot->attachment->type) {
 
 			case SP_ATTACHMENT_REGION: {
 
 				spRegionAttachment *attachment = (spRegionAttachment *)slot->attachment;
 				is_fx = strstr(attachment->path, fx_prefix) != NULL;
-				spRegionAttachment_computeWorldVertices(attachment, slot->bone, world_verts.ptrw(), 0, 2);
+				spRegionAttachment_computeWorldVertices(attachment, slot->bone, vertices, 0, 2);
 				texture = spine_get_texture(attachment);
 				uvs = attachment->uvs;
 				verties_count = 8;
@@ -195,12 +235,11 @@ void Spine::_animation_draw() {
 				break;
 			}
 			case SP_ATTACHMENT_MESH:
-			case SP_ATTACHMENT_LINKED_MESH:
 			{
 
 				spMeshAttachment *attachment = (spMeshAttachment *)slot->attachment;
 				is_fx = strstr(attachment->path, fx_prefix) != NULL;
-				spVertexAttachment_computeWorldVertices(SUPER(attachment), slot, 0, attachment->super.worldVerticesLength, world_verts.ptrw(), 0, 2);
+				spVertexAttachment_computeWorldVertices(SUPER(attachment), slot, 0, attachment->super.worldVerticesLength, vertices, 0, 2);
 				texture = spine_get_texture(attachment);
 				uvs = attachment->uvs;
 				verties_count = ((spVertexAttachment *)attachment)->worldVerticesLength;
@@ -213,42 +252,58 @@ void Spine::_animation_draw() {
 				break;
 			}
 
-			case SP_ATTACHMENT_BOUNDING_BOX: {
-
-				continue;
+			case SP_ATTACHMENT_CLIPPING: {
+				spClippingAttachment* clip = (spClippingAttachment*)slot->attachment;
+				spSkeletonClipping_clipStart(clipper, slot, clip);
+				break;
 			}
+			default: ;
 		}
-		if (texture.is_null())
-			continue;
-		/*
-		if (is_fx && slot->data->blendMode != fx_additive) {
+		if (texture.is_valid()) {
 
-			fx_batcher.add_set_blender_mode(slot->data->additiveBlending
-				? VisualServer::MATERIAL_BLEND_MODE_ADD
-				: get_blend_mode()
-			);
-			fx_additive = slot->data->additiveBlending;
+			/*
+			if (is_fx && slot->data->blendMode != fx_additive) {
+
+				fx_batcher.add_set_blender_mode(slot->data->additiveBlending
+					? VisualServer::MATERIAL_BLEND_MODE_ADD
+					: get_blend_mode()
+				);
+				fx_additive = slot->data->additiveBlending;
+			}
+			else if (slot->data->additiveBlending != additive) {
+
+				batcher.add_set_blender_mode(slot->data->additiveBlending
+					? VisualServer::MATERIAL_BLEND_MODE_ADD
+					: fx_node->get_blend_mode()
+				);
+				additive = slot->data->additiveBlending;
+			}
+			*/
+
+			color.a = skeleton->color.a * slot->color.a * a;
+			color.r = skeleton->color.r * slot->color.r * r;
+			color.g = skeleton->color.g * slot->color.g * g;
+			color.b = skeleton->color.b * slot->color.b * b;
+
+			if (spSkeletonClipping_isClipping(clipper)) {
+				spSkeletonClipping_clipTriangles(clipper, vertices, verties_count, triangles, triangles_count, uvs, 2);
+				vertices = clipper->clippedVertices->items;
+				verties_count = clipper->clippedVertices->size;
+				uvs = clipper->clippedUVs->items;
+				triangles = clipper->clippedTriangles->items;
+				triangles_count = clipper->clippedTriangles->size;
+			}
+			if (triangles_count > 0) {
+				if (is_fx)
+					fx_batcher.add(texture, vertices, uvs, verties_count, triangles, triangles_count, &color, flip_x, flip_y);
+				else
+					batcher.add(texture, vertices, uvs, verties_count, triangles, triangles_count, &color, flip_x, flip_y);
+			}
+
 		}
-		else if (slot->data->additiveBlending != additive) {
-
-			batcher.add_set_blender_mode(slot->data->additiveBlending
-				? VisualServer::MATERIAL_BLEND_MODE_ADD
-				: fx_node->get_blend_mode()
-			);
-			additive = slot->data->additiveBlending;
-		}
-		 */
-
-		color.a = skeleton->color.a * slot->color.a * a;
-		color.r = skeleton->color.r * slot->color.r * r;
-		color.g = skeleton->color.g * slot->color.g * g;
-		color.b = skeleton->color.b * slot->color.b * b;
-
-		if (is_fx)
-			fx_batcher.add(texture, world_verts.ptr(), uvs, verties_count, triangles, triangles_count, &color, flip_x, flip_y);
-		else
-			batcher.add(texture, world_verts.ptr(), uvs, verties_count, triangles, triangles_count, &color, flip_x, flip_y);
+		spSkeletonClipping_clipEnd(clipper, slot);
 	}
+	spSkeletonClipping_clipEnd2(clipper);
 	batcher.flush();
 	fx_node->update();
 
@@ -259,8 +314,11 @@ void Spine::_animation_draw() {
 		for (int i = 0, n = skeleton->slotsCount; i < n; i++) {
 
 			spSlot *slot = skeleton->drawOrder[i];
-			if (!slot->attachment)
+			if (!slot->attachment) 
 				continue;
+			vertices = world_verts;
+			verties_count = 0;
+			triangles_count = 0;
 			switch (slot->attachment->type) {
 
 				case SP_ATTACHMENT_REGION: {
@@ -268,7 +326,7 @@ void Spine::_animation_draw() {
 						continue;
 					spRegionAttachment *attachment = (spRegionAttachment *)slot->attachment;
 					verties_count = 8;
-					spRegionAttachment_computeWorldVertices(attachment, slot->bone, world_verts.ptrw(), 0, 2);
+					spRegionAttachment_computeWorldVertices(attachment, slot->bone, vertices, 0, 2);
 					color = Color(0, 0, 1, 1);
 					triangles = NULL;
 					triangles_count = 0;
@@ -281,19 +339,25 @@ void Spine::_animation_draw() {
 					if (!debug_attachment_mesh)
 						continue;
 					spMeshAttachment *attachment = (spMeshAttachment *)slot->attachment;
-					spVertexAttachment_computeWorldVertices(SUPER(attachment), slot, 0, attachment->super.worldVerticesLength, world_verts.ptrw(), 0, 2);
+					spVertexAttachment_computeWorldVertices(SUPER(attachment), slot, 0, attachment->super.worldVerticesLength, vertices, 0, 2);
 					verties_count = ((spVertexAttachment *)attachment)->verticesCount;
 					color = Color(0, 1, 1, 1);
 					triangles = attachment->triangles;
 					triangles_count = attachment->trianglesCount;
 					break;
 				}
+
+				// case SP_ATTACHMENT_CLIPPING: {
+				// 	spClippingAttachment* clip = (spClippingAttachment*)slot->attachment;
+				// 	spSkeletonClipping_clipStart(clipper, slot, clip);
+				// 	break;
+				// }
 				case SP_ATTACHMENT_BOUNDING_BOX: {
 
 					if (!debug_attachment_bounding_box)
 						continue;
 					spBoundingBoxAttachment *attachment = (spBoundingBoxAttachment *)slot->attachment;
-					spVertexAttachment_computeWorldVertices(SUPER(attachment), slot, 0, ((spVertexAttachment *)attachment)->verticesCount, world_verts.ptrw(), 0, 2);
+					spVertexAttachment_computeWorldVertices(SUPER(attachment), slot, 0, ((spVertexAttachment *)attachment)->verticesCount, vertices, 0, 2);
 					verties_count = ((spVertexAttachment *)attachment)->verticesCount;
 					color = Color(0, 1, 0, 1);
 					triangles = NULL;
@@ -301,8 +365,18 @@ void Spine::_animation_draw() {
 					break;
 				}
 			}
+			// if (triangles_count > 0) {
+			// 	if (spSkeletonClipping_isClipping(clipper)) {
+			// 		spSkeletonClipping_clipTriangles(clipper, vertices, verties_count, triangles, triangles_count, uvs, 2);
+			// 		vertices = clipper->clippedVertices->items;
+			// 		verties_count = clipper->clippedVertices->size;
+			// 		uvs = clipper->clippedUVs->items;
+			// 		triangles = clipper->clippedTriangles->items;
+			// 		triangles_count = clipper->clippedTriangles->size;
+			// 	}
+			// }
 
-			Point2 *points = (Point2 *)world_verts.ptr();
+			Point2 *points = (Point2 *)vertices;
 			int points_size = verties_count / 2;
 
 			for (int idx = 0; idx < points_size; idx++) {
@@ -432,7 +506,7 @@ bool Spine::_set(const StringName &p_name, const Variant &p_value) {
 				stop();
 			else if (has_animation(which)) {
 				reset();
-				play(which, 1, loop);
+				play(which, loop, 0);
 			}
 		} else
 			current_animation = which;
@@ -447,7 +521,7 @@ bool Spine::_set(const StringName &p_name, const Variant &p_value) {
 
 		loop = p_value;
 		if (skeleton != NULL && has_animation(current_animation))
-			play(current_animation, 1, loop);
+			play(current_animation, loop, 0);
 	} else if (name == "playback/forward") {
 
 		forward = p_value;
@@ -632,17 +706,16 @@ void Spine::set_resource(Ref<Spine::SpineResource> p_data) {
 
 	skeleton = spSkeleton_create(res->data);
 	root_bone = skeleton->bones[0];
+	clipper = spSkeletonClipping_create();
 
 	state = spAnimationState_create(spAnimationStateData_create(skeleton->data));
 	state->rendererObject = this;
 	state->listener = spine_animation_callback;
 
-	_update_verties_count();
-
 	if (skin != "")
 		set_skin(skin);
 	if (current_animation != "[stop]")
-		play(current_animation, 1, loop);
+		play(current_animation, loop, 0);
 	else
 		reset();
 
@@ -665,7 +738,7 @@ Array Spine::get_animation_names() const {
 		}
 	}
 
-	return names;
+	return Array();
 }
 
 bool Spine::has_animation(const String &p_name) {
@@ -1327,12 +1400,12 @@ void Spine::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_default_mix", "duration"), &Spine::set_default_mix);
 	ClassDB::bind_method(D_METHOD("mix", "from", "to", "duration"), &Spine::mix, 0);
-	ClassDB::bind_method(D_METHOD("play", "name", "loop", "track", "delay"), &Spine::play, 1.0f, false, 0, 0);
-	ClassDB::bind_method(D_METHOD("play_empty", "track", "mixDuration"), &Spine::play_empty, 0, 0);
-	ClassDB::bind_method(D_METHOD("play_all_empty", "mixDuration"), &Spine::play_all_empty, 0);
-	ClassDB::bind_method(D_METHOD("add", "name", "loop", "track", "delay"), &Spine::add, 1.0f, false, 0, 0);
-	ClassDB::bind_method(D_METHOD("add_empty", "track", "mixDuration", "delay"), &Spine::add_empty, 0, 0, 0);
-	ClassDB::bind_method(D_METHOD("clear", "track"), &Spine::clear, -1);
+	ClassDB::bind_method(D_METHOD("play", "name", "loop", "track", "delay"), &Spine::play, DEFVAL(0.0), DEFVAL(0), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("play_empty", "track", "mixDuration"), &Spine::play_empty, DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("play_all_empty", "mixDuration"), &Spine::play_all_empty, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("add", "name", "loop", "track", "delay"), &Spine::add, DEFVAL(0), DEFVAL(0), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("add_empty", "track", "mixDuration", "delay"), &Spine::add_empty, DEFVAL(0), DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("clear", "track"), &Spine::clear, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("stop"), &Spine::stop);
 	ClassDB::bind_method(D_METHOD("is_playing", "track"), &Spine::is_playing, DEFVAL(0));
 
@@ -1443,11 +1516,11 @@ Rect2 Spine::_edit_get_rect() const {
 		int verticesCount;
 		if (slot->attachment->type == SP_ATTACHMENT_REGION) {
 			spRegionAttachment *attachment = (spRegionAttachment *)slot->attachment;
-			spRegionAttachment_computeWorldVertices(attachment, slot->bone, world_verts.ptrw(), 0, 2);
+			spRegionAttachment_computeWorldVertices(attachment, slot->bone, world_verts, 0, 2);
 			verticesCount = 8;
 		} else if (slot->attachment->type == SP_ATTACHMENT_MESH) {
 			spMeshAttachment *mesh = (spMeshAttachment *)slot->attachment;
-			spVertexAttachment_computeWorldVertices(SUPER(mesh), slot, 0, mesh->super.worldVerticesLength, world_verts.ptrw(), 0, 2);
+			spVertexAttachment_computeWorldVertices(SUPER(mesh), slot, 0, mesh->super.worldVerticesLength, world_verts, 0, 2);
 			verticesCount = ((spVertexAttachment *)mesh)->worldVerticesLength;
 		} else
 			continue;
@@ -1471,37 +1544,6 @@ bool Spine::_edit_use_rect() const {
 	return skeleton != NULL;
 }
 #endif // TOOLS_ENABLED
-
-void Spine::_update_verties_count() {
-
-	ERR_FAIL_COND(skeleton == NULL);
-
-	int verties_count = 0;
-	for (int i = 0, n = skeleton->slotsCount; i < n; i++) {
-
-		spSlot *slot = skeleton->drawOrder[i];
-		if (!slot->attachment)
-			continue;
-
-		switch (slot->attachment->type) {
-
-			case SP_ATTACHMENT_MESH:
-			case SP_ATTACHMENT_LINKED_MESH:
-			case SP_ATTACHMENT_BOUNDING_BOX: {
-				spVertexAttachment* vertexAttachment = SUB_CAST(spVertexAttachment, slot->attachment);
-				verties_count = MAX(verties_count, vertexAttachment->verticesCount + 1);
-
-			} break;
-			default:
-				continue;
-		}
-	}
-
-	if (verties_count > world_verts.size()) {
-		world_verts.resize(verties_count);
-		memset(world_verts.ptrw(), 0, world_verts.size() * sizeof(float));
-	}
-}
 
 
 void Spine::_process_combined_skin() {
@@ -1547,9 +1589,9 @@ Spine::Spine()
 	skeleton = NULL;
 	root_bone = NULL;
 	state = NULL;
+	clipper = nullptr;
 	res = RES();
-	world_verts.resize(1000); // Max number of vertices per mesh.
-	memset(world_verts.ptrw(), 0, world_verts.size() * sizeof(float));
+	world_verts = (float *)memalloc(sizeof(float) * 1000); // Max number of vertices per mesh.
 	speed_scale = 1;
 	autoplay = "";
 	animation_process_mode = ANIMATION_PROCESS_IDLE;
@@ -1586,6 +1628,10 @@ Spine::~Spine() {
 	if (combined_skin != nullptr) {
 		spSkin_dispose(combined_skin);
 		combined_skin = nullptr;
+	}
+	if (world_verts) {
+		memfree(world_verts);
+		world_verts = nullptr;
 	}
 	// cleanup
 	_spine_dispose();

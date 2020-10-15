@@ -57,6 +57,8 @@ public:
 
 		GDCLASS(SpineResource, Resource);
 
+	protected:
+		static void _bind_methods();
 
 	public:
 
@@ -65,6 +67,9 @@ public:
 
 		spAtlas *atlas;
 		spSkeletonData *data;
+
+		Array get_skin_names();
+		Array get_animation_names();
 	};
 
 private:
@@ -73,7 +78,8 @@ private:
 	spSkeleton* skeleton;
 	spBone* root_bone;
 	spAnimationState* state;
-	mutable Vector<float> world_verts;
+	spSkeletonClipping* clipper;
+	mutable float* world_verts;
 
 	float speed_scale;
 	String autoplay;
@@ -129,7 +135,6 @@ private:
 	void _animation_draw();
 	void _set_process(bool p_process, bool p_force = false);
 	void _on_fx_draw();
-	void _update_verties_count();
 	void _process_combined_skin();
 
 protected:
