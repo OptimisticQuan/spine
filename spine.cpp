@@ -1400,10 +1400,10 @@ void Spine::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_default_mix", "duration"), &Spine::set_default_mix);
 	ClassDB::bind_method(D_METHOD("mix", "from", "to", "duration"), &Spine::mix, 0);
-	ClassDB::bind_method(D_METHOD("play", "name", "loop", "track", "delay"), &Spine::play, DEFVAL(0.0), DEFVAL(0), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("play", "name", "loop", "track", "delay"), &Spine::play, DEFVAL(false), DEFVAL(0), DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("play_empty", "track", "mixDuration"), &Spine::play_empty, DEFVAL(0), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("play_all_empty", "mixDuration"), &Spine::play_all_empty, DEFVAL(0));
-	ClassDB::bind_method(D_METHOD("add", "name", "loop", "track", "delay"), &Spine::add, DEFVAL(0), DEFVAL(0), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("add", "name", "loop", "track", "delay"), &Spine::add, DEFVAL(false), DEFVAL(0), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("add_empty", "track", "mixDuration", "delay"), &Spine::add_empty, DEFVAL(0), DEFVAL(0), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("clear", "track"), &Spine::clear, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("stop"), &Spine::stop);
