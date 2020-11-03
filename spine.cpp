@@ -712,8 +712,7 @@ void Spine::set_resource(Ref<Spine::SpineResource> p_data) {
 	state->rendererObject = this;
 	state->listener = spine_animation_callback;
 
-	if (skin != "")
-		set_skin(skin);
+	update_skin_view();
 	if (current_animation != "[stop]")
 		play(current_animation, loop, 0);
 	else
@@ -1484,7 +1483,7 @@ void Spine::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "fx_prefix"), "set_fx_slot_prefix", "get_fx_slot_prefix");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "resource", PROPERTY_HINT_RESOURCE_TYPE, "SpineResource"), "set_resource", "get_resource"); //, PROPERTY_USAGE_NOEDITOR));
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "playback/duration", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_duration", "get_duration");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playback/use_combined_skin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_use_combined_skin", "is_use_combined_skin");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playback/use_combined_skin"), "set_use_combined_skin", "is_use_combined_skin");
 
 
 	ADD_SIGNAL(MethodInfo("animation_start", PropertyInfo(Variant::INT, "track")));
@@ -1624,16 +1623,16 @@ Spine::Spine()
 }
 
 Spine::~Spine() {
-
-	if (combined_skin != nullptr) {
-		spSkin_dispose(combined_skin);
-		combined_skin = nullptr;
-	}
 	if (world_verts) {
 		memfree(world_verts);
 		world_verts = nullptr;
 	}
 	// cleanup
 	_spine_dispose();
+
+	if (combined_skin != nullptr) {
+		spSkin_dispose(combined_skin);
+		combined_skin = nullptr;
+	}
 	// memdelete(fx_node);
 }
